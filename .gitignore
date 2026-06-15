@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.bak
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# Engine test harness (compiled binary)
+engine-tests/.harness
+
+# Private project docs (not part of the open-source distribution)
+CLAUDE.md
+INTEGRATION-MLX.md
+SPEC.md

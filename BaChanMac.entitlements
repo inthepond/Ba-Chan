@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS DEV build: NOT sandboxed (no com.apple.security.app-sandbox key) — full
+	     filesystem + unrestricted localhost:11434 Ollama access + the normal
+	     ~/Library/Application Support path for memory JSON / any MLX weights. Mic and
+	     camera still go through TCC using the INFOPLIST_KEY_NS*UsageDescription strings
+	     (those live in build settings, not here). The device.* + allow-jit keys are
+	     only strictly required under Hardened Runtime, but including them keeps the
+	     build working if Hardened Runtime is turned on later (e.g. for notarization).
+	     Switch to a sandboxed entitlements file before any Mac App Store submission. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+</dict>
+</plist>
