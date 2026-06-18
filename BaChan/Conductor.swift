@@ -492,10 +492,11 @@ final class Conductor: ObservableObject {
     func flipCamera() { camera.flip() }
 
     #if os(macOS)
-    /// Turn screen sight on/off. Off is immediate. On needs the Screen Recording
+    /// Turn screen awareness on/off. Off is immediate. On needs the Screen Recording
     /// permission: without it we raise the system prompt and explain (macOS grants
     /// it in System Settings and then wants the app reopened, so the toggle stays
-    /// off this run).
+    /// off this run). Reading the browser tab additionally asks for Automation the
+    /// first time it runs — that prompt lands naturally on the next chat turn.
     func toggleScreen() {
         if screenEnabled {
             screenEnabled = false
@@ -777,17 +778,35 @@ final class Conductor: ObservableObject {
             }
 
             #if os(macOS)
-            // 2b. Screen sight: one ScreenCaptureKit grab on an asking turn only —
-            //     never ambient — through the same Apple-Vision cue pipeline.
-            let screenLook: CGImage? = (wantsScreen && screenEnabled)
-                ? await ScreenSightService.captureFrame() : nil
-            if let screenLook {
-                let summary = await SightService.analyze(screenLook).summary
-                context.screen = summary.isEmpty ? "a busy screen, hard to make out" : summary
+            // 2b. Screen sight: ScreenCaptureKit grabs on an asking turn only — never
+            //     ambient — across every display, each through the Apple-Vision cue
+            //     pipeline; the focal (mouse) screen also goes to the VLM.
+            var screenLook: CGImage?
+            if wantsScreen && screenEnabled {
+                let shots = await ScreenSightService.captureAll()
+                screenLook = shots.first(where: \.isFocal)?.image ?? shots.first?.image
+                var cues: [String] = []
+                for shot in shots {
+                    let summary = await SightService.analyze(shot.image).summary
+                    guard !summary.isEmpty else { continue }
+                    // One display: just describe it; several: name each.
+                    cues.append(shots.count == 1 ? summary : "\(shot.label): \(summary)")
+                }
+                context.screen = cues.isEmpty
+                    ? "a busy screen, hard to make out" : cues.joined(separator: "; ")
             }
             // Whole-system presence: what they're up to at the Mac right now (app,
-            // focus streak, time since a real break) — free, every turn.
+            // focus streak, time since a real break) — free, every turn. When screen
+            // awareness is on, enrich it with the active browser tab (title + site),
+            // so Ba-Chan knows what they're reading, not just which app.
             context.rhythm = rhythm.contextLine()
+            if screenEnabled {
+                let browsing = await BrowserActivity.contextLine()
+                if !browsing.isEmpty {
+                    context.rhythm = context.rhythm.isEmpty
+                        ? browsing : "\(context.rhythm), \(browsing)"
+                }
+            }
             #else
             let screenLook: CGImage? = nil
             #endif

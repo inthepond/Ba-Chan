@@ -12,6 +12,10 @@
 	     Switch to a sandboxed entitlements file before any Mac App Store submission. -->
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
+	<!-- Sending Apple Events (reading the active browser tab's title/URL via
+	     BrowserActivity) needs this only under Hardened Runtime; harmless without. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<key>com.apple.security.device.camera</key>
