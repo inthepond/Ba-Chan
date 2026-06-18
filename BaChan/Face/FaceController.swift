@@ -151,6 +151,14 @@ final class FaceController: ObservableObject {
         revertTask?.cancel()     // an explicit expression cancels any gesture auto-revert
         self.expression = expression
     }
+    /// A bright, expectant look while a file is dragged over or being taken in.
+    /// `on` holds the look; `off` settles back to neutral.
+    func anticipate(_ on: Bool) {
+        revertTask?.cancel()
+        endPastime()             // a dropped file wakes Ba-Chan from a doze
+        expression = on ? .curious : .neutral
+    }
+
     func setMouth(_ value: CGFloat) { targetMouth = max(0, min(1, value)) }
     func setTilt(_ value: CGFloat) { targetTilt = value }
     func look(at point: CGPoint) { targetGaze = point }

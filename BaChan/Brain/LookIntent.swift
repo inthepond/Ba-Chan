@@ -36,4 +36,15 @@ enum LookIntent {
                     "屏幕", "螢幕", "显示器"]
         return cues.contains { t.contains($0) }
     }
+
+    /// Asking Ba-Chan to read/summarize what's on the page or screen ("sum it up",
+    /// "what does it say"). Used to deep-read the page text, not just glance.
+    static func summarizeMatches(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let cues = ["sum it up", "sum up", "summar", "tldr", "tl;dr", "the gist",
+                    "what does it say", "what does this say", "what's it about",
+                    "what is it about", "read the page", "read this page",
+                    "总结", "概括", "讲了什么", "什么内容", "读一下"]
+        return cues.contains { t.contains($0) }
+    }
 }

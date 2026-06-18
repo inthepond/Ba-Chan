@@ -10,6 +10,8 @@ struct ContentView: View {
     @State private var typed = ""
     @State private var showOnboarding = false
     @State private var showImporter = false
+    /// A file is being dragged over the popover (drives the expectant face).
+    @State private var isDropTargeted = false
     /// Set once the first-launch "tell Ba-Chan's story" invitation has been
     /// seen (Begin or Skip). Cleared by Forget Everything so a fresh start
     /// begins with the story again.
@@ -42,9 +44,22 @@ struct ContentView: View {
                 // Reaction particles (hearts when petted, etc.) float over the face.
                 ParticleOverlay(system: particles)
                     .onAppear { conductor.face.onEffect = { particles.spawn($0) } }
+
+                #if os(macOS)
+                // When Ba-Chan glances at your screen (a proactive moment), a tiny
+                // screenshot floats by the face so the look reads as "I see *this*."
+                if let shot = conductor.lookingImage {
+                    LookingThumbnail(image: shot)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+                #endif
             }
             .offset(y: faceOffset)
             .animation(.easeInOut(duration: 0.35), value: faceOffset)
+            #if os(macOS)
+            .animation(.spring(response: 0.45, dampingFraction: 0.7),
+                       value: conductor.lookingImage == nil)
+            #endif
 
             // Minimal top overlay: live state + what it remembers (no wake bar).
             topOverlay
@@ -73,6 +88,15 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut, value: conductor.visionEnabled)
+        #if os(macOS)
+        // Drop a file or image anywhere on the popover to attach it; the face lights
+        // up (expectant) while it hovers, like the paperclip and Cmd-V paths.
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+            conductor.attach(pasted: providers)
+            return true
+        }
+        .onChange(of: isDropTargeted) { _, hovering in conductor.face.anticipate(hovering) }
+        #endif
         .tint(.primary)                     // monochrome: ink follows the system theme
         .onAppear {
             if !UserDefaults.standard.bool(forKey: Self.onboardingShownKey) {
@@ -482,6 +506,28 @@ struct ContentView: View {
         typed = ""
     }
 }
+
+#if os(macOS)
+/// A tiny framed screenshot that floats above the face while Ba-Chan glances at
+/// your screen — so the observing look reads as "I'm looking at *this*."
+private struct LookingThumbnail: View {
+    let image: CGImage
+
+    var body: some View {
+        Image(decorative: image, scale: 1, orientation: .up)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: 136, height: 86)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(.primary.opacity(0.22), lineWidth: 1))
+            .shadow(color: .black.opacity(0.28), radius: 9, y: 3)
+            .rotationEffect(.degrees(-4))
+            .offset(y: -162)
+            .allowsHitTesting(false)
+    }
+}
+#endif
 
 /// Control sizing tuned per platform — chunky touch targets on iOS, compact on macOS.
 private enum ControlMetrics {

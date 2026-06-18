@@ -20,18 +20,27 @@ final class ImpulseEngine {
         case stretchNag(screenMinutes: Int, appName: String?)
         /// Still at the screen deep into the night.
         case lateNight
+        /// Settled into the same app/page a while — Ba-Chan peeks and offers a hand.
+        case glanceAtScreen(appName: String?)
     }
 
     var onImpulse: ((Impulse) -> Void)?
+
+    /// Whether screen awareness is on — only then does Ba-Chan glance at your screen.
+    var screenAware = false
 
     /// Minimum time between ANY two proactive moments.
     var minimumGap: TimeInterval = 25 * 60
     /// Away at least this long before a return earns a welcome-back.
     var awayThreshold: TimeInterval = 45 * 60
+    /// Settled on the same app this long before Ba-Chan glances over.
+    var glanceDwellMinutes = 30
 
     private var lastFired = Date.distantPast
     /// First stretch nag at 2 h, then again every 75 more minutes at the screen.
     private var lastNagAtMinutes = 0
+    /// The app we last glanced at — so one sustained session earns at most one peek.
+    private var glancedApp: String?
     private var lateNightFiredDay: Date?
     private static let greetedDayKey = "impulseGreetedDay"
 
@@ -60,6 +69,14 @@ final class ImpulseEngine {
         if s.screenMinutes >= 120, s.screenMinutes - lastNagAtMinutes >= 75 {
             lastNagAtMinutes = s.screenMinutes
             fire(.stretchNag(screenMinutes: s.screenMinutes, appName: s.appName))
+        }
+
+        // Settled into one app/page long enough to be worth a glance — once per
+        // sustained session (the app name changing re-arms it).
+        if screenAware, let app = s.appName, app != glancedApp,
+           s.appMinutes >= glanceDwellMinutes {
+            glancedApp = app
+            fire(.glanceAtScreen(appName: app))
         }
 
         let today = Calendar.current.startOfDay(for: Date())

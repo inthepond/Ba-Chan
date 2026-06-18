@@ -25,11 +25,16 @@ enum BrowserActivity {
         "com.apple.Safari", "com.apple.SafariTechnologyPreview",
     ]
 
-    /// The frontmost browser's active tab, or nil when the front app isn't a known
-    /// browser (or it has no window / we're not authorized).
-    static func frontTab() async -> Tab? {
-        guard let front = NSWorkspace.shared.frontmostApplication,
-              let bid = front.bundleIdentifier else { return nil }
+    /// Whether a bundle id is a browser whose active tab we know how to read.
+    static func isBrowser(_ bundleID: String) -> Bool {
+        safari.contains(bundleID) || chromium.contains(bundleID)
+    }
+
+    /// The active tab of `app`, or nil when it isn't a known browser (or has no
+    /// window / we're not authorized). Takes the app explicitly — NOT the live
+    /// frontmost — because BaChan is frontmost while you type in its popover.
+    static func tab(of app: NSRunningApplication?) async -> Tab? {
+        guard let bid = app?.bundleIdentifier else { return nil }
         let accessor: String
         if safari.contains(bid) {
             accessor = "get {name, URL} of current tab of front window"
@@ -43,8 +48,8 @@ enum BrowserActivity {
     }
 
     /// A short context phrase for the prompt, or "" — "reading “Title” on host.com".
-    static func contextLine() async -> String {
-        guard let tab = await frontTab() else { return "" }
+    static func contextLine(of app: NSRunningApplication?) async -> String {
+        guard let tab = await tab(of: app) else { return "" }
         let title = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = URL(string: tab.url)?.host?
             .replacingOccurrences(of: "www.", with: "") ?? ""

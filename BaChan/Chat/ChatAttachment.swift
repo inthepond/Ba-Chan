@@ -65,22 +65,39 @@ enum AttachmentIngestor {
 
     private static func ingestImage(url: URL) async -> ChatAttachment? {
         guard let image = decodeImage(url: url) else { return nil }
+        return await imageAttachment(image, name: url.lastPathComponent)
+    }
+
+    /// Ingest an image from raw bytes — a pasted screenshot or copied web image has
+    /// no backing file URL. Same downscale + sight pipeline as a picked image file.
+    static func ingest(imageData data: Data, name: String) async -> ChatAttachment? {
+        guard let image = decodeImage(data: data) else { return nil }
+        return await imageAttachment(image, name: name)
+    }
+
+    private static func imageAttachment(_ image: CGImage, name: String) async -> ChatAttachment {
         let summary = await SightService.analyze(image).summary
-        return ChatAttachment(fileName: url.lastPathComponent, kind: .image,
+        return ChatAttachment(fileName: name, kind: .image,
                               digest: summary.isEmpty ? "something hard to make out" : summary,
                               image: image)
     }
 
     /// Decode downscaled (≤ 1024 px) — plenty for Vision and a VLM, and it keeps
     /// the base64 payload to a local Ollama server small.
+    private static let thumbnailOptions = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 1024,
+    ] as CFDictionary
+
     private static func decodeImage(url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1024,
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions)
+    }
+
+    private static func decodeImage(data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions)
     }
 
     // MARK: - Video (sample a few frames through the same sight pipeline)
