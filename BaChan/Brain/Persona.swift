@@ -267,6 +267,12 @@ enum Persona {
         if !context.journal.isEmpty {
             s += "\n\nYour honest record of what was actually said between you — answer from it, never invent beyond it:\n" + context.journal
         }
+        // Today's date + time of day, framed as a reference (not a bare "It is morning.")
+        // so it grounds the model's sense of "now" — and lets it reason about dates the
+        // user mentions — rather than being recited back as the reply.
+        if !context.temporalNote.isEmpty {
+            s += "\n\n(For your sense of time, so you reason about dates and times correctly: \(context.temporalNote))"
+        }
         if !context.lucidityHint.isEmpty { s += "\n\n" + context.lucidityHint }
         // A terse restatement near the end: in a long prompt a small model obeys
         // what sits closest to generation, so the style rules get the last word —

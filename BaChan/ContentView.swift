@@ -343,12 +343,13 @@ struct ContentView: View {
             }
 
             #if os(macOS)
-            // Screen = screen sight on/off (macOS): "look at my screen" grabs one
-            // frame. Same vision gate as Look — it feeds the same VLM path.
+            // Screen = screen awareness on/off (macOS): ambiently knows the browser
+            // tab you're reading, and "look at my screen" grabs every display. Same
+            // vision gate as Look — the screenshot feeds the same VLM path.
             if conductor.canShowLook {
                 IconToggle(systemImage: conductor.screenEnabled ? "rectangle.inset.filled" : "rectangle.slash",
                            isOn: conductor.screenEnabled,
-                           label: "Screen — see what's on your screen") { conductor.toggleScreen() }
+                           label: "Screen — see your screen and what you're reading") { conductor.toggleScreen() }
             }
             #endif
 

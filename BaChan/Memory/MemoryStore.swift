@@ -375,9 +375,11 @@ actor MemoryStore: MemoryStoring {
                             temporalNote: temporalNote(now: now))
     }
 
-    /// A gentle time-of-day grounding, plus — only when the user is genuinely
-    /// returning (a 6h+ gap) — how long it's been (SPEC §6). Mid-conversation turns
-    /// get just the time of day, so it never reads as "you've been away" every reply.
+    /// The current date and exact clock time, a time-of-day word, and — only when the user
+    /// is genuinely returning (a 6h+ gap) — how long it's been (SPEC §6). The full date +
+    /// time is the anchor that lets the model reason about elapsed time and answer "what
+    /// time is it"; mid-conversation turns get just the date + time, so it never reads as
+    /// "you've been away" every reply.
     private func temporalNote(now: Date) -> String {
         let cal = Calendar.current
         let partOfDay: String
@@ -387,7 +389,14 @@ actor MemoryStore: MemoryStoring {
         case 17..<22: partOfDay = "evening"
         default:      partOfDay = "late at night"
         }
-        var note = "It is \(partOfDay)."
+        // Lead with the actual date and clock time. Without a "now" anchor a small model
+        // guesses the current date from its training prior and miscalculates anything the
+        // user dates (e.g. "early June" came back as "almost three months ago" on 18 June).
+        // The weekday + full date + exact time lets it work out elapsed time correctly and
+        // answer "what time is it" from the live clock.
+        let dateStr = now.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
+        let timeStr = now.formatted(.dateTime.hour().minute())
+        var note = "Today is \(dateStr), and the time is \(timeStr). It is \(partOfDay)."
         if let last = lastInteractionAt, now.timeIntervalSince(last) >= 6 * 3600 {
             let phrase: String
             if cal.isDateInYesterday(last) { phrase = "yesterday" }
