@@ -29,37 +29,46 @@ struct ContentView: View {
             // The face, its visor, and its particles move as one: when the chat
             // panel is up it would cover the mouth, so the whole group slides up
             // to keep the expression in view.
-            ZStack {
-                AvatarView(face: conductor.face, feature: .primary, background: .clear)
+            //
+            // Skip the whole group while a full-screen opaque overlay (Settings /
+            // onboarding) covers it: `AvatarView`'s `TimelineView(.animation)`
+            // redraws its Canvas every frame, and a 60 fps redraw behind an opaque
+            // panel is pure waste that makes that panel feel laggy. Fades out so
+            // there's no pop as the overlay slides over.
+            if !faceCovered {
+                ZStack {
+                    AvatarView(face: conductor.face, feature: .primary, background: .clear)
 
-                // When Look is on, the camera shows through goggles over Ba-Chan's
-                // eyes — so it feels like it's looking. Gated on `visionEnabled`
-                // (a Conductor @Published) so it hides the instant Look turns off.
-                if conductor.visionEnabled {
-                    GoggleView(camera: conductor.camera) { conductor.flipCamera() }
-                        .ignoresSafeArea()
-                        .transition(.opacity)
+                    // When Look is on, the camera shows through goggles over Ba-Chan's
+                    // eyes — so it feels like it's looking. Gated on `visionEnabled`
+                    // (a Conductor @Published) so it hides the instant Look turns off.
+                    if conductor.visionEnabled {
+                        GoggleView(camera: conductor.camera) { conductor.flipCamera() }
+                            .ignoresSafeArea()
+                            .transition(.opacity)
+                    }
+
+                    // Reaction particles (hearts when petted, etc.) float over the face.
+                    ParticleOverlay(system: particles)
+                        .onAppear { conductor.face.onEffect = { particles.spawn($0) } }
+
+                    #if os(macOS)
+                    // When Ba-Chan glances at your screen (a proactive moment), a tiny
+                    // screenshot floats by the face so the look reads as "I see *this*."
+                    if let shot = conductor.lookingImage {
+                        LookingThumbnail(image: shot)
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
+                    #endif
                 }
-
-                // Reaction particles (hearts when petted, etc.) float over the face.
-                ParticleOverlay(system: particles)
-                    .onAppear { conductor.face.onEffect = { particles.spawn($0) } }
-
+                .offset(y: faceOffset)
+                .animation(.easeInOut(duration: 0.35), value: faceOffset)
                 #if os(macOS)
-                // When Ba-Chan glances at your screen (a proactive moment), a tiny
-                // screenshot floats by the face so the look reads as "I see *this*."
-                if let shot = conductor.lookingImage {
-                    LookingThumbnail(image: shot)
-                        .transition(.scale(scale: 0.5).combined(with: .opacity))
-                }
+                .animation(.spring(response: 0.45, dampingFraction: 0.7),
+                           value: conductor.lookingImage == nil)
                 #endif
+                .transition(.opacity)
             }
-            .offset(y: faceOffset)
-            .animation(.easeInOut(duration: 0.35), value: faceOffset)
-            #if os(macOS)
-            .animation(.spring(response: 0.45, dampingFraction: 0.7),
-                       value: conductor.lookingImage == nil)
-            #endif
 
             // Minimal top overlay: live state + what it remembers (no wake bar).
             topOverlay
@@ -140,6 +149,12 @@ struct ContentView: View {
     private var transcriptVisible: Bool {
         !conductor.transcript.isEmpty
             || (conductor.state == .listening && !conductor.heard.isEmpty)
+    }
+
+    /// A full-screen opaque overlay (Settings or onboarding) is covering the face,
+    /// so the live face group can be dropped to stop its per-frame redraw.
+    private var faceCovered: Bool {
+        conductor.settingsRequested || showOnboarding
     }
 
     /// How far the face group rises when the chat panel is up. The mouth sits at

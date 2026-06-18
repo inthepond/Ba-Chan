@@ -3,7 +3,11 @@ import SwiftUI
 /// Renders Stackchan's face procedurally with a `Canvas`, the same idea as the
 /// M5Stack-Avatar library: everything is drawn from a handful of numbers
 /// (eye openness, gaze, brows, mouth) so the face can be any size and animate
-/// smoothly. A `TimelineView(.animation)` ticks every frame to drive breathing.
+/// smoothly. A `TimelineView(.animation)` ticks to drive breathing — capped at
+/// `maxFPS` because the Canvas redraws on the main thread, and the display's
+/// native rate (120 Hz here) is far more than this gentle face needs (a 120 Hz
+/// redraw pegged ~23% of a core just for the tiny tray icon). All motion is a
+/// function of `timeline.date`, so a lower cap looks identical, just cheaper.
 struct AvatarView: View {
     @ObservedObject var face: FaceController
 
@@ -15,10 +19,18 @@ struct AvatarView: View {
     /// stay balanced). 1 = the tuned look; the tiny macOS menu-bar face uses a larger
     /// scale so it reads as boldly as a filled icon rather than thin line-art.
     var scale: CGFloat = 1.0
+    /// Frame-rate cap for the redraw. 30 is smooth for this face; the menu-bar
+    /// tray icon overrides it lower still (it's tiny — nobody sees the difference).
+    var maxFPS: Double = 30
+    /// Freeze the redraw entirely. The macOS tray face sets this while the popover
+    /// is open — you're looking at the big face then, not the menu bar — so the
+    /// main thread is free for the popover/Settings UI instead of redrawing a
+    /// hidden-in-plain-sight icon.
+    var paused: Bool = false
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / maxFPS, paused: paused)) { timeline in
                 Canvas { context, size in
                     draw(into: &context,
                          size: size,
