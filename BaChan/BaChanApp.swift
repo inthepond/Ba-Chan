@@ -15,11 +15,12 @@ private final class PassthroughHostingView: NSHostingView<AvatarView> {
 /// breathes and changes mood exactly like the popover. Clicking it opens the full
 /// face panel. No Dock icon / standalone window (accessory activation).
 @MainActor
-final class BaChanAppDelegate: NSObject, NSApplicationDelegate {
+final class BaChanAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// The single shared brain + face — used by BOTH the tray icon and the popover.
     let conductor = Conductor()
 
     private var statusItem: NSStatusItem?
+    private var trayHost: PassthroughHostingView?   // the live tray face, to pause it
     private let popover = NSPopover()
     private let pointer = PointerTracker()
     private var popoverIntroPlayed = false
@@ -32,6 +33,7 @@ final class BaChanAppDelegate: NSObject, NSApplicationDelegate {
         conductor.isFaceVisible = { [weak self] in self?.popover.isShown ?? false }
 
         // Popover = the full ContentView, sharing the same Conductor as the tray face.
+        popover.delegate = self      // so a transient (click-outside) close unfreezes the tray face
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 380, height: 640)
         popover.contentViewController = NSHostingController(
@@ -44,8 +46,8 @@ final class BaChanAppDelegate: NSObject, NSApplicationDelegate {
         // shared FaceController.
         let item = NSStatusBar.system.statusItem(withLength: 30)
         if let button = item.button {
-            let host = PassthroughHostingView(rootView:
-                AvatarView(face: conductor.face, feature: .primary, background: .clear, scale: 1.6))
+            let host = PassthroughHostingView(rootView: trayFace(paused: false))
+            trayHost = host
             host.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(host)
             NSLayoutConstraint.activate([
@@ -78,6 +80,24 @@ final class BaChanAppDelegate: NSObject, NSApplicationDelegate {
         pointer.onMove = { [weak self] gaze in self?.conductor.face.followPointer(gaze) }
         pointer.onRest = { [weak self] in self?.conductor.face.stopFollowingPointer() }
         pointer.start()
+    }
+
+    /// The live tray face. `maxFPS` is low (it's a 26×19 pt icon) and it freezes
+    /// while the popover is open, so the menu-bar face costs almost nothing.
+    private func trayFace(paused: Bool) -> AvatarView {
+        AvatarView(face: conductor.face, feature: .primary, background: .clear,
+                   scale: 1.6, maxFPS: 20, paused: paused)
+    }
+
+    /// Pause/resume the tray face's redraw (called when the popover opens/closes).
+    private func setTrayFacePaused(_ paused: Bool) {
+        trayHost?.rootView = trayFace(paused: paused)
+    }
+
+    /// A transient popover can close on a click outside it (not via `togglePopover`),
+    /// so resume the tray face here to cover that path too.
+    func popoverDidClose(_ notification: Notification) {
+        setTrayFacePaused(false)
     }
 
     /// Left-click toggles the popover; right-click shows the tray menu (Quit).
@@ -146,12 +166,14 @@ final class BaChanAppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
         if popover.isShown {
             popover.performClose(nil)
+            setTrayFacePaused(false)   // back to the tray face — let it breathe again
         } else {
             // Accessory apps aren't active by default; activate so the popover comes
             // forward and its text field can take keyboard focus.
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            setTrayFacePaused(true)    // popover's big face is up — freeze the tray icon
             // The launch trace played on the tiny tray face; give the big face the
             // same drawn-on entrance the first time it's actually seen.
             if !popoverIntroPlayed {
