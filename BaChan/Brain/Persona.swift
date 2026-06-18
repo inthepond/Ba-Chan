@@ -129,6 +129,23 @@ enum Persona {
         return "It's the middle of the night. Whatever it is, it will still be there tomorrow. Go to bed."
     }
 
+    /// Ba-Chan peeked at your screen and offers a hand, grounded in what's there.
+    /// `browsing` is the active-tab phrase ("reading “X” on host.com") or "".
+    static func glanceLine(browsing: String, appName: String?, persona: PersonaProfile) -> String {
+        if FoundationGuard.isChinese(persona.language) {
+            if !browsing.isEmpty { return "我瞄到你在看的东西了。要我帮你理一理吗？" }
+            if let app = appName, !app.isEmpty { return "你在\(app)里忙了好一会儿了。需要我搭把手吗？" }
+            return "让我瞄一眼你在忙什么——有什么要帮忙的吗？"
+        }
+        if !browsing.isEmpty {
+            return "I see you're \(browsing). Want me to take a closer look, or sum it up for you?"
+        }
+        if let app = appName, !app.isEmpty {
+            return "You've been deep in \(app) for a while. Want me to take a look at what's on your screen?"
+        }
+        return "Mind if I peek at what you're working on? I might be able to lend a hand."
+    }
+
     /// The instruction handed to the model (as the user turn) for a grounded
     /// welcome-back check-in. Asks for the line alone, so the reply can be shown
     /// verbatim; the output guards backstop it like any reply.

@@ -110,6 +110,15 @@ final class Conductor: ObservableObject {
     /// Presence (macOS): the work-rhythm monitor and the speak-first impulses.
     private let rhythm = WorkRhythm()
     private let impulse = ImpulseEngine()
+    /// Intercepts Cmd-V so a pasted file/image attaches instead of typing its name.
+    private let pasteMonitor = PasteMonitor()
+    /// A tiny screenshot shown by the face when Ba-Chan glances at your screen
+    /// (a proactive moment); cleared a few seconds later.
+    @Published private(set) var lookingImage: CGImage?
+    private var lookingClearTask: Task<Void, Never>?
+    /// When Ba-Chan last offered to look/summarize (a glance). A non-declining reply
+    /// within a few minutes is taken as "yes" and triggers the real page read.
+    private var screenOfferAt: Date?
     /// Set by the app delegate: whether the face is on screen right now (popover
     /// open). When it isn't, a proactive line also goes out as a notification.
     var isFaceVisible: (() -> Bool)?
@@ -380,6 +389,9 @@ final class Conductor: ObservableObject {
         rhythm.onTick = { [weak self] snapshot in self?.impulse.tick(snapshot) }
         rhythm.start()
         impulse.onImpulse = { [weak self] event in self?.act(on: event) }
+        impulse.screenAware = screenEnabled
+        pasteMonitor.onPaste = { [weak self] in self?.attachFromPasteboard() ?? false }
+        pasteMonitor.start()
         // Wake events need a prior idle spell, so the first launch of a morning
         // checks the greeting here — after the launch dust settles, and only if
         // nothing (e.g. the clear-window opener) has spoken yet.
@@ -508,6 +520,7 @@ final class Conductor: ObservableObject {
                 text: "macOS wants your okay first. Allow screen recording for me in System Settings, Privacy and Security, then open me again and flip this on.",
                 expression: .doubt))
         }
+        impulse.screenAware = screenEnabled   // glances only when you've opted in
     }
     #endif
 
@@ -650,7 +663,7 @@ final class Conductor: ObservableObject {
     func attach(urls: [URL]) {
         guard !urls.isEmpty else { return }
         Task {
-            isIngestingAttachment = true
+            beginIngest()
             for url in urls {
                 let scoped = url.startAccessingSecurityScopedResource()
                 if let attachment = await AttachmentIngestor.ingest(url: url) {
@@ -658,9 +671,77 @@ final class Conductor: ObservableObject {
                 }
                 if scoped { url.stopAccessingSecurityScopedResource() }
             }
-            isIngestingAttachment = false
+            endIngest()
         }
     }
+
+    /// Bracket an ingest with the busy flag and the bright, expectant face. The
+    /// face wears `.curious` while files are coming in, then settles.
+    private func beginIngest() {
+        isIngestingAttachment = true
+        #if os(macOS)
+        face.anticipate(true)
+        #endif
+    }
+    private func endIngest() {
+        isIngestingAttachment = false
+        #if os(macOS)
+        face.anticipate(false)
+        #endif
+    }
+
+    #if os(macOS)
+    /// Ingest items pasted into the chat box (Cmd-V), mirroring `attach(urls:)`: a
+    /// file copied from Finder keeps its path; a raw clipboard image (a screenshot,
+    /// a "Copy Image" from the web) is decoded straight from its bytes.
+    func attach(pasted providers: [NSItemProvider]) {
+        guard !providers.isEmpty else { return }
+        Task {
+            beginIngest()
+            for provider in providers {
+                if let url = await provider.pastedFileURL() {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    if let attachment = await AttachmentIngestor.ingest(url: url) {
+                        pendingAttachments.append(attachment)
+                    }
+                    if scoped { url.stopAccessingSecurityScopedResource() }
+                } else if let img = await provider.pastedImage(),
+                          let attachment = await AttachmentIngestor.ingest(imageData: img.data, name: img.name) {
+                    pendingAttachments.append(attachment)
+                }
+            }
+            endIngest()
+        }
+    }
+
+    /// Read a Cmd-V from the system pasteboard, kicked off by `PasteMonitor`. Returns
+    /// true (synchronously, on content presence) so the monitor swallows the event;
+    /// the actual ingest runs async. A copied file keeps its path; a raw clipboard
+    /// image (screenshot, "Copy Image") is decoded straight from its bytes.
+    func attachFromPasteboard() -> Bool {
+        let pb = NSPasteboard.general
+        if let urls = pb.readObjects(forClasses: [NSURL.self],
+                                     options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            attach(urls: urls)
+            return true
+        }
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            guard let data = pb.data(forType: type) else { continue }
+            let ext = type == .png ? "png" : "tiff"
+            Task {
+                beginIngest()
+                if let attachment = await AttachmentIngestor.ingest(imageData: data,
+                                                                    name: "Pasted image.\(ext)") {
+                    pendingAttachments.append(attachment)
+                }
+                endIngest()
+            }
+            return true
+        }
+        return false
+    }
+    #endif
 
     func removeAttachment(_ id: UUID) {
         pendingAttachments.removeAll { $0.id == id }
@@ -727,22 +808,29 @@ final class Conductor: ObservableObject {
         Task {
             let wantsToLook = LookIntent.matches(text)
             #if os(macOS)
-            // "Look at my screen" outranks the camera — and like the camera, the
-            // screen is manual-only, so asking while Screen is off gets guidance.
+            // Two ways to reach into the screen: a *visual* look ("look at my screen"
+            // → screenshot/VLM) and a *read* ("sum it up", or accepting a glance offer
+            // → the page's real text). Both are manual, so asking while Screen is off
+            // gets guidance. A read prefers the page text and falls back to a shot.
             let wantsScreen = LookIntent.screenMatches(text) && attachments.isEmpty
-            if wantsScreen && !screenEnabled {
+            let wantsRead = attachments.isEmpty
+                && (acceptedScreenOffer(for: text) || LookIntent.summarizeMatches(text))
+            let deepScreen = wantsScreen || wantsRead
+            if deepScreen && !screenEnabled {
                 deliver(BrainReply(text: "Turn on Screen and I'll have a look at what you're working on!",
                                    expression: .doubt))
                 return
             }
             #else
             let wantsScreen = false
+            let wantsRead = false
             #endif
 
             // If they ask Stackchan to look but vision is off, guide them — the
             // camera is manual-only and never turns itself on. (Unless they attached
-            // a file: then "look at this" means the file, not the camera.)
-            if wantsToLook && !wantsScreen && !visionEnabled && attachments.isEmpty {
+            // a file, or it's a screen *read* like "read this page": those aren't the
+            // camera.)
+            if wantsToLook && !wantsScreen && !wantsRead && !visionEnabled && attachments.isEmpty {
                 deliver(BrainReply(text: "Turn on Look and I'll see what you're showing me!",
                                    expression: .doubt))
                 return
@@ -778,30 +866,37 @@ final class Conductor: ObservableObject {
             }
 
             #if os(macOS)
-            // 2b. Screen sight: ScreenCaptureKit grabs on an asking turn only — never
-            //     ambient — across every display, each through the Apple-Vision cue
-            //     pipeline; the focal (mouse) screen also goes to the VLM.
+            // 2b. Screen sight, on an asking turn only — never ambient. A *read* takes
+            //     the page's real text (the whole article, via Accessibility) so a
+            //     summary is grounded; if that's empty (not a browser / no access) OR
+            //     it's a plain visual look, fall back to a ScreenCaptureKit shot of
+            //     every display (the focal one also goes to the VLM).
             var screenLook: CGImage?
-            if wantsScreen && screenEnabled {
-                let shots = await ScreenSightService.captureAll()
-                screenLook = shots.first(where: \.isFocal)?.image ?? shots.first?.image
-                var cues: [String] = []
-                for shot in shots {
-                    let summary = await SightService.analyze(shot.image).summary
-                    guard !summary.isEmpty else { continue }
-                    // One display: just describe it; several: name each.
-                    cues.append(shots.count == 1 ? summary : "\(shot.label): \(summary)")
+            if deepScreen && screenEnabled {
+                let pageText = wantsRead ? await PageTextReader.pageText(of: rhythm.frontApp) : ""
+                if !pageText.isEmpty {
+                    context.screen = pageText
+                } else {
+                    let shots = await ScreenSightService.captureAll()
+                    screenLook = shots.first(where: \.isFocal)?.image ?? shots.first?.image
+                    var cues: [String] = []
+                    for shot in shots {
+                        let summary = await SightService.analyze(shot.image).summary
+                        guard !summary.isEmpty else { continue }
+                        // One display: just describe it; several: name each.
+                        cues.append(shots.count == 1 ? summary : "\(shot.label): \(summary)")
+                    }
+                    context.screen = cues.isEmpty
+                        ? "a busy screen, hard to make out" : cues.joined(separator: "; ")
                 }
-                context.screen = cues.isEmpty
-                    ? "a busy screen, hard to make out" : cues.joined(separator: "; ")
             }
             // Whole-system presence: what they're up to at the Mac right now (app,
             // focus streak, time since a real break) — free, every turn. When screen
-            // awareness is on, enrich it with the active browser tab (title + site),
-            // so Ba-Chan knows what they're reading, not just which app.
+            // awareness is on, enrich it with the active browser tab (title + site) of
+            // the app you were last really in (not BaChan, which is frontmost now).
             context.rhythm = rhythm.contextLine()
             if screenEnabled {
-                let browsing = await BrowserActivity.contextLine()
+                let browsing = await BrowserActivity.contextLine(of: rhythm.frontApp)
                 if !browsing.isEmpty {
                     context.rhythm = context.rhythm.isEmpty
                         ? browsing : "\(context.rhythm), \(browsing)"
@@ -1003,6 +1098,64 @@ final class Conductor: ObservableObject {
         case .lateNight:
             deliverProactive(BrainReply(text: Persona.lateNightLine(persona: personaProfile),
                                         expression: .concerned))
+        case .glanceAtScreen(let app):
+            Task { await glanceAtScreen(appName: app) }
+        }
+    }
+
+    /// Ba-Chan glances at what you're doing: capture the focal screen + read the
+    /// active browser tab, show a tiny screenshot by the face with the observing
+    /// look, and offer something grounded in what's actually there. Only when Screen
+    /// is on AND the popover is open — the glance is meant to be seen, and we don't
+    /// take background screenshots of a closed companion.
+    private func glanceAtScreen(appName: String?) async {
+        guard screenEnabled, isFaceVisible?() == true,
+              state == .idle, !isBrainLoading,
+              Date().timeIntervalSince(lastExchangeAt) > 5 * 60 else { return }
+        let shots = await ScreenSightService.captureAll()
+        let focal = shots.first(where: \.isFocal)?.image ?? shots.first?.image
+        let browsing = await BrowserActivity.contextLine(of: rhythm.frontApp)
+        showLooking(focal)
+        let line = Persona.glanceLine(browsing: browsing, appName: appName, persona: personaProfile)
+        deliverProactive(BrainReply(text: line, expression: .observing))
+        screenOfferAt = Date()   // a non-declining reply now means "yes, do it"
+    }
+
+    /// Whether the user just accepted a glance offer — an affirmative reply within a
+    /// few minutes of Ba-Chan offering. Consumed on a yes; an unrelated message leaves
+    /// the offer armed (the window still bounds it), so it never false-triggers a read.
+    private func acceptedScreenOffer(for text: String) -> Bool {
+        guard let at = screenOfferAt, Date().timeIntervalSince(at) < 5 * 60 else {
+            screenOfferAt = nil
+            return false
+        }
+        guard Self.isAffirmative(text) else { return false }
+        screenOfferAt = nil
+        return true
+    }
+
+    private static func isAffirmative(_ text: String) -> Bool {
+        let t = text.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "!.?"))
+        guard !t.isEmpty else { return false }
+        let yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please",
+                   "go on", "go ahead", "do it", "sounds good", "why not", "alright",
+                   "yes please", "go for it", "好", "好的", "好啊", "好呀", "可以",
+                   "行", "嗯", "麻烦你", "来吧"]
+        return yes.contains { t == $0 || t.hasPrefix($0 + " ") || t.hasPrefix($0 + ",") }
+    }
+
+    /// Float a tiny screenshot beside the face and wear the observing look, then
+    /// settle back after a few seconds.
+    private func showLooking(_ image: CGImage?) {
+        lookingClearTask?.cancel()
+        lookingImage = image
+        lookingClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.lookingImage = nil
+            if self.face.expression == .observing { self.face.set(.neutral) }
         }
     }
 

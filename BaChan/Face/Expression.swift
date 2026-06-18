@@ -10,6 +10,11 @@ enum Expression: String, CaseIterable {
     case concerned
     /// Calm contentment — soft near-closed eyes and an easy smile, quieter than `happy`.
     case peaceful
+    /// Bright anticipation — brows up, eyes wide, a ready smile. Worn while a file is
+    /// dragged over or being taken in ("ooh, what's this?").
+    case curious
+    /// Attentive focus — Ba-Chan peering at something on your screen.
+    case observing
 
     /// Eyebrow tilt in degrees. Positive lifts the *outer* end (angry/stern),
     /// negative lifts the inner end (sad/worried).
@@ -24,6 +29,8 @@ enum Expression: String, CaseIterable {
         case .surprised: return -4
         case .concerned: return -14
         case .peaceful:  return -3
+        case .curious:   return -6
+        case .observing: return -4
         }
     }
 
@@ -38,6 +45,8 @@ enum Expression: String, CaseIterable {
         case .sad:       return 0.0051
         case .surprised: return -0.0333
         case .concerned: return 0.0026
+        case .curious:   return -0.0262
+        case .observing: return -0.0160
         default:         return 0
         }
     }
@@ -54,6 +63,8 @@ enum Expression: String, CaseIterable {
         case .surprised: return 0.0
         case .concerned: return -0.45
         case .peaceful:  return 0.5
+        case .curious:   return 0.45
+        case .observing: return 0.08
         }
     }
 
@@ -66,10 +77,12 @@ enum Expression: String, CaseIterable {
         case .surprised: return -0.25   // eyes pop wider than normal
         case .concerned: return 0.18
         case .peaceful:  return 0.6
+        case .curious:   return -0.18   // wide with anticipation
+        case .observing: return -0.08   // a touch wide, attentive
         default:         return 0.0
         }
     }
 
-    /// Kawaii cheek blush — when delighted or quietly content.
-    var showsBlush: Bool { self == .happy || self == .peaceful }
+    /// Kawaii cheek blush — when delighted or quietly content (or excited by a gift).
+    var showsBlush: Bool { self == .happy || self == .peaceful || self == .curious }
 }

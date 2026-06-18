@@ -25,6 +25,12 @@ final class WorkRhythm {
     /// Fired every poll (~5 s) while the user is at the screen.
     var onTick: ((Snapshot) -> Void)?
 
+    /// The last app that was genuinely frontmost (never us). Kept because while you
+    /// type in Ba-Chan's popover, BaChan itself is frontmost — so anything that needs
+    /// to read *your* app (the browser tab, the page text) must use this, not the live
+    /// `frontmostApplication`. Nil until you've focused a real app.
+    private(set) var frontApp: NSRunningApplication?
+
     /// Whole-system idle that counts as a real break (stepping away, not just
     /// pausing to think) — it resets the screen stretch.
     var breakThreshold: TimeInterval = 180
@@ -80,6 +86,7 @@ final class WorkRhythm {
         }
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            frontApp = front
             let name = front.localizedName ?? ""
             if name != snapshot.appName {
                 snapshot.appName = name

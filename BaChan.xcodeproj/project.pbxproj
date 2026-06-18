@@ -281,9 +281,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Ba-Chan";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Ba-Chan reads the title and address of the page you're viewing so it knows what you're reading.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Ba-Chan uses the camera so it can see what you show it.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Ba-Chan listens to you so it can chat back.";
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Ba-Chan reads the title and address of the page you're viewing so it knows what you're reading.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Ba-Chan turns your speech into text on-device so it can understand you.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -318,9 +318,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Ba-Chan";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Ba-Chan reads the title and address of the page you're viewing so it knows what you're reading.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Ba-Chan uses the camera so it can see what you show it.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Ba-Chan listens to you so it can chat back.";
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Ba-Chan reads the title and address of the page you're viewing so it knows what you're reading.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Ba-Chan turns your speech into text on-device so it can understand you.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
